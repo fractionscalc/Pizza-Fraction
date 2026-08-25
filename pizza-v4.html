@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Fractions: Custom Pizza Slicer</title>
+    <link rel="canonical" href="https://fractionscalc.com/what-is-a-fraction" />
+    <style>
+        :root {
+            --primary: #ff7b54;
+            --bg-color: #f4f6f8;
+            --text-dark: #333;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: var(--text-dark);
+        }
+
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: var(--primary);
+        }
+
+        p.instruction {
+            font-size: 15px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        #pizza-container {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+            touch-action: none; /* Prevent scrolling while slicing on mobile */
+        }
+
+        canvas {
+            background: #fff8f0;
+            border-radius: 50%;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.05);
+            cursor: crosshair;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap; /* Allows buttons to wrap on smaller screens */
+            gap: 15px;
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        button:hover {
+            background-color: #e06945;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        /* Varian warna untuk tombol kedua */
+        .btn-secondary {
+            background-color: #4a90e2;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #357abd;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🍕 Fraction Pizza Slicer</h2>
+    <p class="instruction">
+        <strong>How to Play:</strong> Drag a line across the center of the pizza to slice it further. The system will calculate the fraction for each slice!
+    </p>
+
+    <div id="pizza-container">
+        <canvas id="pizzaCanvas" width="400" height="400"></canvas>
+    </div>
+
+    <!-- Menambahkan dua tombol berdampingan -->
+    <div class="controls">
+        <button onclick="resetTo8Slices()">🔄 Reset to 8 Slices</button>
+        <button class="btn-secondary" onclick="resetToWhole()">🍕 Make a New Pizza</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('pizzaCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Pizza Configuration
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const radius = 160;
+    
+    // State Variables
+    // Pre-cut the pizza into 8 slices (4 cuts at 45-degree intervals)
+    const DEFAULT_CUTS = [0, 45, 90, 135];
+    let cutAngles = [...DEFAULT_CUTS]; // Store slice angles in degrees (0 - 179)
+    let isCutting = false;
+    let currentMousePos = { x: 0, y: 0 };
+    let dragAngle = null;
+
+    // Utility function to find the Greatest Common Divisor (GCD) for fraction simplification
+    function gcd(a, b) {
+        return b === 0 ? a : gcd(b, a % b);
+    }
+
+    // Draw the base pizza and its slices
+    function drawPizza() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Determine slice boundaries
+        let boundaries = [0, 360]; // If there are no cuts, boundaries are 0 to 360
+        if (cutAngles.length > 0) {
+            boundaries = [];
+            cutAngles.forEach(angle => {
+                boundaries.push(angle);
+                boundaries.push(angle + 180);
+            });
+            // Sort and remove duplicates
+            boundaries = [...new Set(boundaries)].sort((a, b) => a - b);
+            boundaries.push(boundaries[0] + 360); // Close the circle
+        }
+
+        // Draw each slice
+        for (let i = 0; i < boundaries.length - 1; i++) {
+            let startAngle = boundaries[i] * Math.PI / 180;
+            let endAngle = boundaries[i + 1] * Math.PI / 180;
+            let midAngle = (startAngle + endAngle) / 2;
+            let sliceSize = boundaries[i + 1] - boundaries[i];
+            
+            // Don't draw slices with a size of 0
+            if (sliceSize <= 0) continue; 
+
+            // Explode Effect -> Offset each slice slightly away from the center
+            let explodeOffset = cutAngles.length > 0 ? 3 : 0;
+            let px = cx + Math.cos(midAngle) * explodeOffset;
+            let py = cy + Math.sin(midAngle) * explodeOffset;
+
+            // Draw Crust
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.arc(px, py, radius, startAngle, endAngle);
+            ctx.closePath();
+            ctx.fillStyle = '#E8A359'; 
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#D98943';
+            ctx.stroke();
+
+            // Draw Cheese/Sauce (Topping)
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.arc(px, py, radius * 0.88, startAngle, endAngle);
+            ctx.closePath();
+            ctx.fillStyle = '#FFC107'; 
+            ctx.fill();
+
+            // Draw Fraction Text
+            drawFractionText(sliceSize, px, py, midAngle);
+        }
+
+        // Draw cutting guideline while the user is dragging the mouse
+        if (isCutting && dragAngle !== null) {
+            let lineStart = {
+                x: cx + Math.cos(dragAngle * Math.PI / 180) * radius * 1.2,
+                y: cy + Math.sin(dragAngle * Math.PI / 180) * radius * 1.2
+            };
+            let lineEnd = {
+                x: cx - Math.cos(dragAngle * Math.PI / 180) * radius * 1.2,
+                y: cy - Math.sin(dragAngle * Math.PI / 180) * radius * 1.2
+            };
+
+            ctx.beginPath();
+            ctx.moveTo(lineStart.x, lineStart.y);
+            ctx.lineTo(lineEnd.x, lineEnd.y);
+            ctx.setLineDash([5, 5]);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'red';
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    // Function to draw fraction text in a mathematical style
+    function drawFractionText(sliceSizeDegrees, px, py, midAngle) {
+        let num = Math.round(sliceSizeDegrees);
+        let den = 360;
+        let divisor = gcd(num, den);
+        
+        // Simplified fraction
+        let finalNum = num / divisor;
+        let finalDen = den / divisor;
+
+        // Text position (in the middle of the slice)
+        let textRadius = radius * 0.6;
+        let tx = px + Math.cos(midAngle) * textRadius;
+        let ty = py + Math.sin(midAngle) * textRadius;
+
+        ctx.fillStyle = '#333';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 18px Arial';
+
+        if (finalNum === finalDen) {
+            ctx.fillText('1 Whole', tx, ty);
+        } else {
+            // Draw numerator
+            ctx.fillText(finalNum, tx, ty - 10);
+            
+            // Draw fraction line
+            let textWidth = Math.max(ctx.measureText(finalNum).width, ctx.measureText(finalDen).width);
+            ctx.beginPath();
+            ctx.moveTo(tx - textWidth/2 - 2, ty);
+            ctx.lineTo(tx + textWidth/2 + 2, ty);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#333';
+            ctx.stroke();
+            
+            // Draw denominator
+            ctx.fillText(finalDen, tx, ty + 12);
+        }
+    }
+
+    // Get interaction position (mouse/touch)
+    function getEventPos(e) {
+        let rect = canvas.getBoundingClientRect();
+        let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: clientX - rect.left,
+            y: clientY - rect.top
+        };
+    }
+
+    // Calculate angle from mouse drag to center (Snap to 15-degree multiples to simplify fractions)
+    function calculateSnapAngle(pos) {
+        let dx = pos.x - cx;
+        let dy = pos.y - cy;
+        let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (angle < 0) angle += 360;
+        
+        // We only need angles 0-179 because a cut always goes through the opposite side
+        angle = angle % 180;
+        
+        // Snap to 15-degree increments (enables fractions like 1/24, 1/12, 1/8, 1/6, 1/4, 1/3)
+        let snap = 15;
+        return Math.round(angle / snap) * snap;
+    }
+
+    // Event Listeners for Interaction
+    function startCut(e) {
+        isCutting = true;
+        let pos = getEventPos(e);
+        dragAngle = calculateSnapAngle(pos);
+        drawPizza();
+    }
+
+    function moveCut(e) {
+        if (!isCutting) return;
+        let pos = getEventPos(e);
+        dragAngle = calculateSnapAngle(pos);
+        drawPizza();
+    }
+
+    function endCut(e) {
+        if (!isCutting) return;
+        isCutting = false;
+        
+        // Save cut angle if it doesn't exist (avoid duplicates at the same angle)
+        if (dragAngle !== null && !cutAngles.includes(dragAngle) && !cutAngles.includes(dragAngle % 180)) {
+            cutAngles.push(dragAngle % 180);
+        }
+        
+        dragAngle = null;
+        drawPizza();
+    }
+
+    // Mouse Events
+    canvas.addEventListener('mousedown', startCut);
+    canvas.addEventListener('mousemove', moveCut);
+    canvas.addEventListener('mouseup', endCut);
+    canvas.addEventListener('mouseleave', () => { isCutting = false; drawPizza(); });
+
+    // Touch Events (for mobile/tablets)
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startCut(e); }, {passive: false});
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveCut(e); }, {passive: false});
+    canvas.addEventListener('touchend', endCut);
+
+    // Reset Functions
+    function resetTo8Slices() {
+        cutAngles = [...DEFAULT_CUTS]; // Reset back to 8 slices
+        drawPizza();
+    }
+
+    function resetToWhole() {
+        cutAngles = []; // Empty array means no cuts (1 whole pizza)
+        drawPizza();
+    }
+
+    // Initial setup
+    drawPizza();
+</script>
+
+</body>
+</html>
